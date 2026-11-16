@@ -1,4 +1,4 @@
-name: Ollama Qwen3 Thinking Diagnostic (read-only)
+name: Qwen3 Instruct vs Thinking Diagnostic (read-only)
 
 on:
   push:
@@ -14,10 +14,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  model-diagnostic:
-    name: Inspect Qwen3 thinking controls
+  model-comparison:
+    name: Compare Qwen3 Instruct and Thinking
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Checkout selected branch
         uses: actions/checkout@v4
@@ -26,46 +26,74 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Start temporary Ollama model server
+      - name: Start temporary Ollama model server and pull both models
         shell: bash
         run: |
           set -euo pipefail
           docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
           for attempt in {1..60}; do
-            if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then
-              break
-            fi
+            if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
             sleep 2
           done
           curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null
           docker exec ollama ollama pull qwen3:4b
+          docker exec ollama ollama pull qwen3:4b-instruct
           curl --silent --show-error --fail http://127.0.0.1:11434/api/version --output ollama-version.json
-          node -e 'const fs=require("fs"); fs.writeFileSync("ollama-show-request.json", JSON.stringify({model:"qwen3:4b"}));'
-          curl --silent --show-error --fail -H "Content-Type: application/json" --data-binary @ollama-show-request.json http://127.0.0.1:11434/api/show --output qwen3-show.json
+          node -e 'const fs=require("fs"); for (const model of ["qwen3:4b","qwen3:4b-instruct"]) fs.writeFileSync(model.replaceAll(":","-")+"-show-request.json",JSON.stringify({model}));'
+          for model in qwen3:4b qwen3:4b-instruct; do
+            safe_model="${model/:/-}"
+            curl --silent --show-error --fail -H "Content-Type: application/json" --data-binary @"${safe_model}-show-request.json" http://127.0.0.1:11434/api/show --output "${safe_model}-show.json"
+          done
 
-      - name: Compare native Generate and Chat with thinking disabled
+      - name: Compare exact-answer behavior
         env:
           QUESTION: "Напиши ровно одно слово ГОТОВО."
         shell: bash
         run: |
           set -euo pipefail
-          node -e 'const fs=require("fs"); const prompt=process.env.QUESTION; fs.writeFileSync("ollama-generate-request.json", JSON.stringify({model:"qwen3:4b",prompt,stream:false,think:false,options:{num_predict:512},keep_alive:"5m"})); fs.writeFileSync("ollama-chat-request.json", JSON.stringify({model:"qwen3:4b",messages:[{role:"user",content:prompt}],stream:false,think:false,options:{num_predict:512},keep_alive:"5m"}));'
-          curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @ollama-generate-request.json http://127.0.0.1:11434/api/generate --output ollama-generate-result.json
-          curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @ollama-chat-request.json http://127.0.0.1:11434/api/chat --output ollama-chat-result.json
-          node -e 'const fs=require("fs"); const g=JSON.parse(fs.readFileSync("ollama-generate-result.json","utf8")); const c=JSON.parse(fs.readFileSync("ollama-chat-result.json","utf8")); console.log("GENERATE thinking field:",JSON.stringify(g.thinking??null)); console.log("GENERATE response:",g.response); console.log("CHAT thinking field:",JSON.stringify(c.message?.thinking??null)); console.log("CHAT content:",c.message?.content); console.log("Generate tokens:",g.eval_count,"Chat tokens:",c.eval_count); if(!g.response?.trim() || !c.message?.content?.trim()) process.exit(1);'
+          for model in qwen3:4b qwen3:4b-instruct; do
+            safe_model="${model/:/-}"
+            MODEL_NAME="$model" node -e 'const fs=require("fs"); const model=process.env.MODEL_NAME; const prompt=process.env.QUESTION; fs.writeFileSync(model.replaceAll(":","-")+"-answer-request.json",JSON.stringify({model,messages:[{role:"user",content:prompt}],stream:false,think:false,options:{num_predict:256},keep_alive:"5m"}));'
+            curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @"${safe_model}-answer-request.json" http://127.0.0.1:11434/api/chat --output "${safe_model}-answer-result.json"
+            MODEL_FILE="${safe_model}-answer-result.json" node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.env.MODEL_FILE,"utf8")); console.log("\\nMODEL RESULT:",process.env.MODEL_FILE); console.log("thinking:",JSON.stringify(r.message?.thinking??null)); console.log("content:",r.message?.content); console.log("tokens:",r.eval_count,"reason:",r.done_reason); if(!r.message?.content?.trim()) process.exit(1);'
+          done
 
-      - name: Upload diagnostic report
+      - name: Compare tool-calling behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require("fs");
+          const tools = [{type:"function",function:{name:"get_weather",description:"Get current weather for a city",parameters:{type:"object",properties:{city:{type:"string"}},required:["city"]}}}];
+          for (const model of ["qwen3:4b","qwen3:4b-instruct"]) {
+            const safe = model.replaceAll(":","-");
+            fs.writeFileSync(safe+"-tool-request.json",JSON.stringify({model,messages:[{role:"user",content:"Use the get_weather tool for Paris. Do not answer from memory."}],tools,stream:false,options:{num_predict:256},keep_alive:"5m"}));
+          }
+          NODE
+          for model in qwen3:4b qwen3:4b-instruct; do
+            safe_model="${model/:/-}"
+            curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @"${safe_model}-tool-request.json" http://127.0.0.1:11434/api/chat --output "${safe_model}-tool-result.json"
+            MODEL_FILE="${safe_model}-tool-result.json" node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.env.MODEL_FILE,"utf8")); console.log("\\nTOOL RESULT:",process.env.MODEL_FILE); console.log("tool_calls:",JSON.stringify(r.message?.tool_calls??[])); console.log("content:",r.message?.content);'
+          done
+
+      - name: Upload comparison report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qwen3-thinking-diagnostic
+          name: qwen3-instruct-vs-thinking
           path: |
             ollama-version.json
-            qwen3-show.json
-            ollama-show-request.json
-            ollama-generate-request.json
-            ollama-chat-request.json
-            ollama-generate-result.json
-            ollama-chat-result.json
+            qwen3-4b-show-request.json
+            qwen3-4b-instruct-show-request.json
+            qwen3-4b-show.json
+            qwen3-4b-instruct-show.json
+            qwen3-4b-answer-request.json
+            qwen3-4b-instruct-answer-request.json
+            qwen3-4b-answer-result.json
+            qwen3-4b-instruct-answer-result.json
+            qwen3-4b-tool-request.json
+            qwen3-4b-instruct-tool-request.json
+            qwen3-4b-tool-result.json
+            qwen3-4b-instruct-tool-result.json
           if-no-files-found: warn
           retention-days: 7
