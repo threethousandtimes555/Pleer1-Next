@@ -56,7 +56,7 @@ jobs:
 
       - name: Ask the companion
         env:
-          QUESTION: ${{ inputs.question }}
+          QUESTION: ${{ github.event.inputs.question || 'Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги.' }}
           CI: "true"
         shell: bash
         run: |
