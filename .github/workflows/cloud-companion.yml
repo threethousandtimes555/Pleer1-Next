@@ -10,7 +10,7 @@ on:
         description: "Short test prompt for the local Qwen3 model"
         required: true
         type: string
-        default: "Ответь одной короткой фразой QWEN3 работает."
+        default: "Напиши ровно одно слово ГОТОВО."
 
 permissions:
   contents: read
@@ -48,12 +48,12 @@ jobs:
 
       - name: Ask Qwen3 directly (without OpenCode)
         env:
-          QUESTION: ${{ github.event.inputs.question || 'Ответь одной короткой фразой QWEN3 работает.' }}
+          QUESTION: ${{ github.event.inputs.question || 'Напиши ровно одно слово ГОТОВО.' }}
         shell: bash
         run: |
           set -euo pipefail
           printf '%s\n' "$QUESTION" > direct-test-prompt.txt
-          node -e 'const fs=require("fs"); const prompt=fs.readFileSync("direct-test-prompt.txt","utf8").trim(); fs.writeFileSync("ollama-request.json", JSON.stringify({model:"qwen3:4b", prompt, stream:false, think:false, options:{num_predict:64}, keep_alive:"5m"}));'
+          node -e 'const fs=require("fs"); const prompt=fs.readFileSync("direct-test-prompt.txt","utf8").trim(); fs.writeFileSync("ollama-request.json", JSON.stringify({model:"qwen3:4b", prompt, stream:false, think:false, options:{num_predict:256}, keep_alive:"5m"}));'
           echo "Sending a short prompt directly to Ollama API (10-minute request limit)..."
           curl --silent --show-error --fail-with-body --max-time 600 \
             -H "Content-Type: application/json" \
