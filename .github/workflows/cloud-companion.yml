@@ -1,4 +1,4 @@
-name: Cloud AI Companion (read-only)
+name: Ollama Direct Model Smoke Test (read-only)
 
 on:
   push:
@@ -7,23 +7,23 @@ on:
   workflow_dispatch:
     inputs:
       question:
-        description: "Question or task for the AI companion (do not include secrets or personal data)"
+        description: "Short test prompt for the local Qwen3 model"
         required: true
         type: string
-        default: "Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги."
+        default: "Ответь одной короткой фразой: QWEN3 работает."
 
 permissions:
   contents: read
 
 concurrency:
-  group: cloud-companion-${{ github.ref }}
+  group: ollama-direct-test-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  companion:
-    name: Run read-only AI companion in GitHub Cloud
+  model-smoke-test:
+    name: Test Qwen3 directly through Ollama
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - name: Checkout selected branch
         uses: actions/checkout@v4
@@ -46,33 +46,30 @@ jobs:
           curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null
           docker exec ollama ollama pull qwen3:4b
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install OpenCode CLI
-        run: npm install --global @opencode/cli
-
-      - name: Ask the companion
+      - name: Ask Qwen3 directly (without OpenCode)
         env:
-          QUESTION: ${{ github.event.inputs.question || 'Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги.' }}
-          CI: "true"
+          QUESTION: ${{ github.event.inputs.question || 'Ответь одной короткой фразой: QWEN3 работает.' }}
         shell: bash
         run: |
           set -euo pipefail
-          opencode run \
-            --standalone \
-            --agent cloud-readonly \
-            --model ollama/qwen3:4b \
-            --format json \
-            "$QUESTION" | tee "companion-report.jsonl"
+          printf '%s\n' "$QUESTION" > direct-test-prompt.txt
+          node -e 'const fs=require("fs"); const prompt=fs.readFileSync("direct-test-prompt.txt","utf8").trim(); fs.writeFileSync("ollama-request.json", JSON.stringify({model:"qwen3:4b", prompt, stream:false, think:false, options:{num_predict:64}, keep_alive:"5m"}));'
+          echo "Sending a short prompt directly to Ollama API (10-minute request limit)..."
+          curl --silent --show-error --fail-with-body --max-time 600 \
+            -H "Content-Type: application/json" \
+            --data-binary @ollama-request.json \
+            http://127.0.0.1:11434/api/generate \
+            --output ollama-direct-test.json
+          node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync("ollama-direct-test.json","utf8")); if(typeof r.response!=="string" || !r.response.trim()) { console.error("Ollama returned no text response"); process.exit(1); } console.log("DIRECT_MODEL_RESPONSE:"); console.log(r.response); console.log("MODEL:",r.model); console.log("TOTAL_DURATION_NS:",r.total_duration);'
 
-      - name: Upload answer
+      - name: Upload direct model test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pleer1-next-companion-answer
-          path: companion-report.jsonl
+          name: ollama-direct-model-test
+          path: |
+            direct-test-prompt.txt
+            ollama-request.json
+            ollama-direct-test.json
           if-no-files-found: warn
           retention-days: 7
