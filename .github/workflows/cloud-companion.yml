@@ -1,0 +1,75 @@
+name: Cloud AI Companion (read-only)
+
+on:
+  workflow_dispatch:
+    inputs:
+      question:
+        description: "Question or task for the AI companion (do not include secrets or personal data)"
+        required: true
+        type: string
+        default: "Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги."
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-companion-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  companion:
+    name: Run read-only AI companion in GitHub Cloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout selected branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Start temporary Ollama model server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
+          for attempt in {1..60}; do
+            if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null
+          docker exec ollama ollama pull qwen3:4b
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OpenCode CLI
+        run: npm install --global @opencode/cli
+
+      - name: Ask the companion
+        env:
+          QUESTION: ${{ inputs.question }}
+          CI: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          opencode run \
+            --standalone \
+            --agent cloud-readonly \
+            --model ollama/qwen3:4b \
+            --format json \
+            "$QUESTION" | tee "$RUNNER_TEMP/companion-report.jsonl"
+
+      - name: Upload answer
+        if: always() && hashFiles(runner.temp + '/companion-report.jsonl') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pleer1-next-companion-answer
+          path: ${{ runner.temp }}/companion-report.jsonl
+          if-no-files-found: warn
+          retention-days: 7
