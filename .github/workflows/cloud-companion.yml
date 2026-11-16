@@ -1,23 +1,29 @@
-name: Qwen3 Instruct vs Thinking Diagnostic (read-only)
+name: Cloud AI Companion (read-only, Qwen3 Instruct)
 
 on:
   push:
     branches:
       - feature/cloud-companion-prototype
   workflow_dispatch:
+    inputs:
+      question:
+        description: "Question or task for the AI companion (do not include secrets or personal data)"
+        required: true
+        type: string
+        default: "Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги."
 
 permissions:
   contents: read
 
 concurrency:
-  group: ollama-diagnostic-${{ github.ref }}
+  group: cloud-companion-instruct-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  model-comparison:
-    name: Compare Qwen3 Instruct and Thinking
+  companion:
+    name: Run read-only AI companion with Qwen3 Instruct
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 45
     steps:
       - name: Checkout selected branch
         uses: actions/checkout@v4
@@ -26,7 +32,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Start temporary Ollama model server and pull both models
+      - name: Start temporary Ollama model server
         shell: bash
         run: |
           set -euo pipefail
@@ -36,64 +42,35 @@ jobs:
             sleep 2
           done
           curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null
-          docker exec ollama ollama pull qwen3:4b
           docker exec ollama ollama pull qwen3:4b-instruct
-          curl --silent --show-error --fail http://127.0.0.1:11434/api/version --output ollama-version.json
-          node -e 'const fs=require("fs"); for (const model of ["qwen3:4b","qwen3:4b-instruct"]) fs.writeFileSync(model.replaceAll(":","-")+"-show-request.json",JSON.stringify({model}));'
-          for model in qwen3:4b qwen3:4b-instruct; do
-            safe_model="${model/:/-}"
-            curl --silent --show-error --fail -H "Content-Type: application/json" --data-binary @"${safe_model}-show-request.json" http://127.0.0.1:11434/api/show --output "${safe_model}-show.json"
-          done
 
-      - name: Compare exact-answer behavior
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install OpenCode CLI
+        run: npm install --global @opencode/cli
+
+      - name: Ask the companion to inspect the repository
         env:
-          QUESTION: "Напиши ровно одно слово ГОТОВО."
+          QUESTION: ${{ github.event.inputs.question || 'Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги.' }}
+          CI: "true"
         shell: bash
         run: |
           set -euo pipefail
-          for model in qwen3:4b qwen3:4b-instruct; do
-            safe_model="${model/:/-}"
-            MODEL_NAME="$model" node -e 'const fs=require("fs"); const model=process.env.MODEL_NAME; const prompt=process.env.QUESTION; fs.writeFileSync(model.replaceAll(":","-")+"-answer-request.json",JSON.stringify({model,messages:[{role:"user",content:prompt}],stream:false,think:false,options:{num_predict:256},keep_alive:"5m"}));'
-            curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @"${safe_model}-answer-request.json" http://127.0.0.1:11434/api/chat --output "${safe_model}-answer-result.json"
-            MODEL_FILE="${safe_model}-answer-result.json" node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.env.MODEL_FILE,"utf8")); console.log("\\nMODEL RESULT:",process.env.MODEL_FILE); console.log("thinking:",JSON.stringify(r.message?.thinking??null)); console.log("content:",r.message?.content); console.log("tokens:",r.eval_count,"reason:",r.done_reason); if(!r.message?.content?.trim()) process.exit(1);'
-          done
+          opencode run \
+            --standalone \
+            --agent cloud-readonly \
+            --model ollama/qwen3:4b-instruct \
+            --format json \
+            "$QUESTION" | tee "companion-report.jsonl"
 
-      - name: Compare tool-calling behavior
-        shell: bash
-        run: |
-          set -euo pipefail
-          node <<'NODE'
-          const fs = require("fs");
-          const tools = [{type:"function",function:{name:"get_weather",description:"Get current weather for a city",parameters:{type:"object",properties:{city:{type:"string"}},required:["city"]}}}];
-          for (const model of ["qwen3:4b","qwen3:4b-instruct"]) {
-            const safe = model.replaceAll(":","-");
-            fs.writeFileSync(safe+"-tool-request.json",JSON.stringify({model,messages:[{role:"user",content:"Use the get_weather tool for Paris. Do not answer from memory."}],tools,stream:false,options:{num_predict:256},keep_alive:"5m"}));
-          }
-          NODE
-          for model in qwen3:4b qwen3:4b-instruct; do
-            safe_model="${model/:/-}"
-            curl --silent --show-error --fail-with-body --max-time 600 -H "Content-Type: application/json" --data-binary @"${safe_model}-tool-request.json" http://127.0.0.1:11434/api/chat --output "${safe_model}-tool-result.json"
-            MODEL_FILE="${safe_model}-tool-result.json" node -e 'const fs=require("fs"); const r=JSON.parse(fs.readFileSync(process.env.MODEL_FILE,"utf8")); console.log("\\nTOOL RESULT:",process.env.MODEL_FILE); console.log("tool_calls:",JSON.stringify(r.message?.tool_calls??[])); console.log("content:",r.message?.content);'
-          done
-
-      - name: Upload comparison report
+      - name: Upload companion report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: qwen3-instruct-vs-thinking
-          path: |
-            ollama-version.json
-            qwen3-4b-show-request.json
-            qwen3-4b-instruct-show-request.json
-            qwen3-4b-show.json
-            qwen3-4b-instruct-show.json
-            qwen3-4b-answer-request.json
-            qwen3-4b-instruct-answer-request.json
-            qwen3-4b-answer-result.json
-            qwen3-4b-instruct-answer-result.json
-            qwen3-4b-tool-request.json
-            qwen3-4b-instruct-tool-request.json
-            qwen3-4b-tool-result.json
-            qwen3-4b-instruct-tool-result.json
+          name: pleer1-next-companion-answer
+          path: companion-report.jsonl
           if-no-files-found: warn
           retention-days: 7
