@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   companion:
-    name: Run read-only AI companion with Qwen3 Instruct
+    name: Diagnose Ollama and OpenCode model discovery
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -52,25 +52,56 @@ jobs:
       - name: Install OpenCode CLI
         run: npm install --global @opencode/cli
 
-      - name: Ask the companion to inspect the repository
+      - name: Diagnose Ollama and OpenCode model discovery
         env:
           QUESTION: ${{ github.event.inputs.question || 'Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги.' }}
           CI: "true"
         shell: bash
         run: |
-          set -euo pipefail
-          opencode run \
-            --standalone \
-            --agent cloud-readonly \
-            --model ollama/qwen3:4b-instruct \
-            --format json \
-            "$QUESTION" | tee "companion-report.jsonl"
+          set +e
+          REPORT="companion-diagnostics.txt"
+          exec > >(tee "$REPORT") 2>&1
 
-      - name: Upload companion report
+          echo "=== Runtime versions ==="
+          ollama_version="$(docker exec ollama ollama --version 2>&1)"
+          echo "$ollama_version"
+          opencode --version
+          echo
+
+          echo "=== Ollama local inventory ==="
+          docker exec ollama ollama list
+          echo
+
+          echo "=== Ollama native /api/tags ==="
+          curl --silent --show-error --fail http://127.0.0.1:11434/api/tags | python -m json.tool
+          echo
+
+          echo "=== Ollama native /api/show ==="
+          curl --silent --show-error --fail             -H "Content-Type: application/json"             -d '{"name":"qwen3:4b-instruct"}'             http://127.0.0.1:11434/api/show | python -m json.tool
+          echo
+
+          echo "=== Ollama OpenAI-compatible /v1/models ==="
+          curl --silent --show-error --fail http://127.0.0.1:11434/v1/models | python -m json.tool
+          echo
+
+          echo "=== OpenCode discovered Ollama models ==="
+          opencode models ollama --refresh --verbose
+          echo "OpenCode models exit code: $?"
+          echo
+
+          echo "=== OpenCode debug run (read-only agent) ==="
+          opencode run             --print-logs             --log-level DEBUG             --standalone             --agent cloud-readonly             --model ollama/qwen3:4b-instruct             --format json             "$QUESTION"
+          echo "OpenCode run exit code: $?"
+
+          echo
+          echo "Diagnostics completed; failures above are intentionally captured for inspection."
+          exit 0
+
+      - name: Upload companion diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pleer1-next-companion-answer
-          path: companion-report.jsonl
+          name: pleer1-next-companion-diagnostics
+          path: companion-diagnostics.txt
           if-no-files-found: warn
           retention-days: 7
