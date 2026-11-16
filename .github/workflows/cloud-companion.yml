@@ -1,6 +1,9 @@
 name: Cloud AI Companion (read-only)
 
 on:
+  push:
+    branches:
+      - feature/cloud-companion-prototype
   workflow_dispatch:
     inputs:
       question:
