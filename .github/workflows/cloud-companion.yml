@@ -85,12 +85,12 @@ jobs:
           echo
 
           echo "=== OpenCode discovered Ollama models ==="
-          opencode models ollama --refresh --verbose
+          opencode models
           echo "OpenCode models exit code: $?"
           echo
 
           echo "=== OpenCode debug run (read-only agent) ==="
-          opencode run             --print-logs             --log-level DEBUG             --standalone             --agent cloud-readonly             --model ollama/qwen3:4b-instruct             --format json             "$QUESTION"
+          opencode run             --print-logs             --log-level debug             --standalone             --agent cloud-readonly             --model ollama/qwen3:4b-instruct             --format json             "$QUESTION"
           echo "OpenCode run exit code: $?"
 
           echo
