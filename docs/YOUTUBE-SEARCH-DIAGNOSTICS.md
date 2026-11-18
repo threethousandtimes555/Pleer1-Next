@@ -143,7 +143,11 @@ The user authorized porting the verified parser/search-intent fixes into an isol
 - HTML fallback dedupe fix: commit `666c0b33de0afce4360b62a1536edf2dadc6d0ac`.
 - Cyrillic diacritic normalization fix: commit `79ab6356de113946a6acc83252ccfd6bfb183b09`.
 - IPA workflow update: commit `9e54866acfbd0b140dc1a102d536140878072ccd`; push trigger restricted to this branch, with manual trigger retained.
-- Lab decision journal: `docs/PROJECT-DECISIONS.md`.
-- Lab build log: `docs/BUILD-LOG.md`.
+- Canonical project records remain `ROADMAP.md` and `audit-evidence/DECISION-AND-ERROR-LOG.md` in `Pleer1-temporary` working branch; do not create parallel Lab journals.
 
 No simulator was run. The build workflow targets generic iOS device (`iphoneos`) and currently packages an unsigned IPA because code signing is disabled in project settings. This is for personal sideloading via Sideloadly, not App Store publication. Build result/artifact, installation and physical iPhone live-search validation remain pending until the workflow outcome is inspected.
+
+
+### Documentation correction — 2026-11-19
+
+The user confirmed that the canonical project documents are `ROADMAP.md` and `audit-evidence/DECISION-AND-ERROR-LOG.md` in the Pleer1-temporary working branch. Do not create additional decision/build journals in Pleer1-Lab. Temporary files `docs/PROJECT-DECISIONS.md` and `docs/BUILD-LOG.md` that had been created in the Lab fix branch were deleted. The current Lab work and pending iPhone validation are recorded in the canonical ROADMAP and decision/error log (entry #055). Companion docs are not substitutes for those canonical records.
