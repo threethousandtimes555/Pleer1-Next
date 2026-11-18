@@ -10,7 +10,7 @@ on:
         description: "Question or task for the AI companion (do not include secrets or personal data)"
         required: true
         type: string
-        default: "Проведи read-only анализ диагностических материалов Build #14 и подготовь инженерный отчёт."
+        default: "Сверь актуальный контекст Pleer1, оцени готовность компаньона и назови один следующий безопасный шаг."
 
 permissions:
   contents: read
@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   companion:
-    name: Focused read-only YouTube diagnostics review
+    name: Context-aware read-only engineering review
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -52,7 +52,7 @@ jobs:
       - name: Install OpenCode CLI
         run: npm install --global @opencode/cli
 
-      - name: Run focused read-only diagnostics
+      - name: Run context-aware read-only analysis
         env:
           QUESTION: ${{ github.event.inputs.question }}
           CI: "true"
@@ -64,7 +64,19 @@ jobs:
 
           if [[ -z "${QUESTION:-}" ]]; then
             QUESTION="$(cat <<'EOF'
-          Проанализируй только документацию лаборатории Pleer1-Next по диагностике YouTube из docs/YOUTUBE-SEARCH-DIAGNOSTICS.md, а также AGENTS.md, README.md и docs/ARCHITECTURE.md. Подготовь инженерный отчёт по Build #14: какие наблюдения подтверждены; что нельзя заключить из-за отсутствия searchID и связки событий; какие конкретные поля логов и минимальные тесты нужны, чтобы отличить потерю результата при парсинге от фильтрации или UI; и какой один следующий безопасный шаг. Репозиторий содержит документацию и конфигурацию компаньона, но не исходный код приложения Pleer1: не утверждай, что проверил реализацию или нашёл ошибку в коде. Не предлагай менять UI, другие репозитории или разрешения. Только чтение. Отделяй факты, гипотезы и неизвестное.
+          Прочитай полностью AGENTS.md, README.md, docs/ARCHITECTURE.md, docs/YOUTUBE-SEARCH-DIAGNOSTICS.md и docs/PLEER1-CURRENT-CONTEXT.md. Затем выполни контекстную проверку готовности компаньона и проекта Pleer1.
+
+          Важно: этот публичный репозиторий содержит только документацию и конфигурацию компаньона, не исходный код приложения Pleer1. Не заявляй, что изучил реализацию, проверил исправление, собрал приложение или запустил симулятор. Не пытайся получать данные из других репозиториев. Не повторяй заново диагностику Build #14 и не выдумывай новые причины уже обсуждённой проблемы.
+
+          Сформируй отчёт:
+          1. Какие файлы и факты реально доступны в текущем checkout.
+          2. Что известно о текущем этапе проекта и согласованной последовательности работ.
+          3. Какие факты Build #14 остаются полезными, а какие выводы из них делать нельзя.
+          4. Чем подтверждён запуск компаньона #22 и чего он не доказал.
+          5. Какие данные отсутствуют для анализа реализации — перечисли конкретно, не запрашивая исходники целиком.
+          6. Один следующий безопасный шаг, который не нарушает границы репозиториев и не меняет порядок проекта.
+
+          Строго отделяй подтверждённое от пересказа журнала и гипотез. Краткий статус в конце: «Подтверждено / Не подтверждено / Ограничение контекста / Следующий шаг».
           EOF
           )"
           fi
@@ -86,7 +98,7 @@ jobs:
           opencode models
           echo
 
-          echo "=== OpenCode focused read-only analysis ==="
+          echo "=== OpenCode context-aware analysis ==="
           opencode run --print-logs --log-level debug --standalone --agent cloud-readonly --model ollama/qwen3:4b-instruct --format json "$QUESTION"
           echo "OpenCode run exit code: $?"
           echo
@@ -95,7 +107,7 @@ jobs:
           docker exec ollama ollama ps
           echo
 
-          echo "Diagnostics completed; inspect the report content, not only the workflow exit code."
+          echo "Diagnostics completed; inspect report content, not only workflow conclusion."
           exit 0
 
       - name: Upload companion diagnostics
