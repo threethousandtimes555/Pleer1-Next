@@ -90,3 +90,43 @@ Never log cookies, authorization headers, API tokens, visitor secrets, or privat
 5. Keep playback validation separate: resolve and play a selected video under a known-good network/VPN condition; record visitorData/player API outcome and AVPlayer readiness independently.
 
 For each test, report whether it ran in code inspection, automated test, CI simulator, or physical iPhone. Never imply that one test environment proves another.
+
+
+---
+
+## Evidence update — macOS parser harness PASS (2026-11-18)
+
+A targeted no-simulator Codemagic workflow compiled the actual production search/parser source files and executed fixture assertions.
+
+- Build ID: `6afdede1d133a39c4a12cf2a`.
+- Workflow: `Pleer1 macOS YouTube search logic tests (no simulator)`.
+- Tested commit: `96b067c` on `Pleer1-temporary/verify/youtube-search-macos-2026-11-18`.
+- Result marker: `SEARCH_LOGIC_HARNESS: PASS (5 groups)`.
+
+Observed assertions:
+- InnerTube ordinary track mode: `videos=1, playlists=0, radios=0, returned=1`.
+- InnerTube collection mode: `videos=1, playlists=1, radios=1, returned=3`.
+- HTML ordinary track mode: `videos=1, playlists=0, radios=0, returned=1`.
+- HTML collection mode: `videos=1, playlists=1, radios=1, returned=3`.
+- Other groups cover intent classification, direct playlist/Mix URLs, and ordinary playlistRenderer vs RD Mix classification.
+
+The harness is a real executable compiled from production source files, but it uses fixture data. It is not a live YouTube request, not an iOS XCTest/UI test, and not physical-device validation.
+
+## Confirmed parser defect and patch location
+
+The Build #14 source at `Pleer1` commit `14956c5fbe07d39af97f73d4b462efc3fb42e66f` contained the same deduplication defect in both InnerTube and HTML parsing: video IDs were inserted into `seen` while collecting videos, then the combined array `videos + playlists + radios` was filtered through the same set again. Already-seen video IDs were dropped. The isolated patch deduplicates only the collection results after the video list has already been deduplicated.
+
+Patch location is limited to the public temporary verification branch:
+- `plei/Sources/YouTubeEngine.swift` — commit `710dff4005b2af09b9a19d83068ae18081f17767`.
+- `plei/Sources/YouTubeHTMLSearch.swift` — commit `01fb4d6e1a00dcc27ec77ad3860f4755f3d1746c`.
+- Search-intent handling also distinguishes ordinary video searches from explicit playlist/Mix requests.
+
+## Lab integration status — patch not yet ported
+
+A subsequent read-only inspection of `Pleer1-Lab/integration/pleer1-work-2026-11-18` found the old combined-array dedupe expression still present in both `YouTubeEngine.swift` and `YouTubeHTMLSearch.swift`. Thus the successful harness applies to the temporary branch only. Do not claim the Lab branch, Main branch, or installed iPhone build is fixed.
+
+## Required next validation
+
+After explicit user authorization, port only the reviewed search/parser patch into an isolated Lab branch, review the exact diff, then compile a generic iOS device build without launching a simulator. Device validation must then verify standalone search results in the installed app. Keep playlist/audio checks already confirmed in Build #14 out of the repeat-test list unless new evidence points to a regression.
+
+Do not treat an unsigned build as install-ready. Confirm how the device artifact will be signed/packaged for Sideloadly, and keep credentials/certificates out of public repositories and logs.
