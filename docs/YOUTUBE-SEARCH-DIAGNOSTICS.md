@@ -130,3 +130,20 @@ A subsequent read-only inspection of `Pleer1-Lab/integration/pleer1-work-2026-11
 After explicit user authorization, port only the reviewed search/parser patch into an isolated Lab branch, review the exact diff, then compile a generic iOS device build without launching a simulator. Device validation must then verify standalone search results in the installed app. Keep playlist/audio checks already confirmed in Build #14 out of the repeat-test list unless new evidence points to a regression.
 
 Do not treat an unsigned build as install-ready. Confirm how the device artifact will be signed/packaged for Sideloadly, and keep credentials/certificates out of public repositories and logs.
+
+
+---
+
+## Lab integration update — 2026-11-19
+
+The user authorized porting the verified parser/search-intent fixes into an isolated Lab branch and preparing an iPhone install build.
+
+- Branch: `fix/youtube-standalone-search-device-2026-11-19`, based on `integration/pleer1-work-2026-11-18`.
+- InnerTube dedupe fix: commit `57efe0a326f043a961c9df90b77ec64eae3274ce`.
+- HTML fallback dedupe fix: commit `666c0b33de0afce4360b62a1536edf2dadc6d0ac`.
+- Cyrillic diacritic normalization fix: commit `79ab6356de113946a6acc83252ccfd6bfb183b09`.
+- IPA workflow update: commit `9e54866acfbd0b140dc1a102d536140878072ccd`; push trigger restricted to this branch, with manual trigger retained.
+- Lab decision journal: `docs/PROJECT-DECISIONS.md`.
+- Lab build log: `docs/BUILD-LOG.md`.
+
+No simulator was run. The build workflow targets generic iOS device (`iphoneos`) and currently packages an unsigned IPA because code signing is disabled in project settings. This is for personal sideloading via Sideloadly, not App Store publication. Build result/artifact, installation and physical iPhone live-search validation remain pending until the workflow outcome is inspected.
