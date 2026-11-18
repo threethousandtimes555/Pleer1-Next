@@ -140,3 +140,8 @@ Codemagic:
 - **Не делать:** не запускать симулятор; не трогать Main; не называть harness проверкой живого YouTube или телефона.
 
 Следующий шаг — получить статус GitHub Actions build, изучить build log и артефакт; затем передать пользователю IPA для Sideloadly и проверить обычный запрос отдельного трека на физическом iPhone.
+
+
+### Documentation correction — 2026-11-19
+
+The user confirmed that the canonical project documents are `ROADMAP.md` and `audit-evidence/DECISION-AND-ERROR-LOG.md` in the Pleer1-temporary working branch. Do not create additional decision/build journals in Pleer1-Lab. Temporary files `docs/PROJECT-DECISIONS.md` and `docs/BUILD-LOG.md` that had been created in the Lab fix branch were deleted. The current Lab work and pending iPhone validation are recorded in the canonical ROADMAP and decision/error log (entry #055). Companion docs are not substitutes for those canonical records.
