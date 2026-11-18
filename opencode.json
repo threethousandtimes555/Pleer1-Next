@@ -7,6 +7,15 @@
         "baseURL": "http://127.0.0.1:11434/v1",
         "headerTimeout": false,
         "chunkTimeout": false
+      },
+      "models": {
+        "qwen3:4b-instruct": {
+          "name": "Qwen3 4B Instruct (32K context)",
+          "limit": {
+            "context": 32768,
+            "output": 4096
+          }
+        }
       }
     }
   },

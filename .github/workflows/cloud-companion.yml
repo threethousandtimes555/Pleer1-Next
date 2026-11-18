@@ -10,7 +10,8 @@ on:
         description: "Question or task for the AI companion (do not include secrets or personal data)"
         required: true
         type: string
-        default: "Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги."
+        default: >-
+          Проанализируй только документацию лаборатории Pleer1-Next по диагностике YouTube из docs/YOUTUBE-SEARCH-DIAGNOSTICS.md, а также AGENTS.md, README.md и docs/ARCHITECTURE.md. Подготовь инженерный отчёт по Build #14: какие наблюдения подтверждены; что нельзя заключить из-за отсутствия searchID и связки событий; какие конкретные поля логов и минимальные тесты нужны, чтобы отличить потерю результата при парсинге от фильтрации или UI; и какой один следующий безопасный шаг. Репозиторий содержит документацию и конфигурацию компаньона, но не исходный код приложения Pleer1: не утверждай, что проверил реализацию или нашёл ошибку в коде. Не предлагай менять UI, другие репозитории или разрешения. Только чтение. Отделяй факты, гипотезы и неизвестное.
 
 permissions:
   contents: read
@@ -21,7 +22,7 @@ concurrency:
 
 jobs:
   companion:
-    name: Diagnose Ollama and OpenCode model discovery
+    name: Focused read-only YouTube diagnostics review
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -36,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
+          docker run -d --name ollama -e OLLAMA_CONTEXT_LENGTH=32768 -p 11434:11434 ollama/ollama:latest
           for attempt in {1..60}; do
             if curl --silent --fail http://127.0.0.1:11434/api/tags >/dev/null; then break; fi
             sleep 2
@@ -52,9 +53,9 @@ jobs:
       - name: Install OpenCode CLI
         run: npm install --global @opencode/cli
 
-      - name: Diagnose Ollama and OpenCode model discovery
+      - name: Run focused read-only diagnostics
         env:
-          QUESTION: ${{ github.event.inputs.question || 'Изучи структуру Pleer1-Next, объясни назначение файлов и предложи следующие безопасные шаги.' }}
+          QUESTION: ${{ github.event.inputs.question || 'Проанализируй только документацию лаборатории Pleer1-Next по диагностике YouTube из docs/YOUTUBE-SEARCH-DIAGNOSTICS.md, а также AGENTS.md, README.md и docs/ARCHITECTURE.md. Подготовь инженерный отчёт по Build #14: какие наблюдения подтверждены; что нельзя заключить из-за отсутствия searchID и связки событий; какие конкретные поля логов и минимальные тесты нужны, чтобы отличить потерю результата при парсинге от фильтрации или UI; и какой один следующий безопасный шаг. Репозиторий содержит документацию и конфигурацию компаньона, но не исходный код приложения Pleer1: не утверждай, что проверил реализацию или нашёл ошибку в коде. Не предлагай менять UI, другие репозитории или разрешения. Только чтение. Отделяй факты, гипотезы и неизвестное.' }}
           CI: "true"
         shell: bash
         run: |
@@ -63,38 +64,32 @@ jobs:
           exec > >(tee "$REPORT") 2>&1
 
           echo "=== Runtime versions ==="
-          ollama_version="$(docker exec ollama ollama --version 2>&1)"
-          echo "$ollama_version"
+          docker exec ollama ollama --version
           opencode --version
           echo
 
-          echo "=== Ollama local inventory ==="
+          echo "=== Ollama model inventory ==="
           docker exec ollama ollama list
           echo
 
-          echo "=== Ollama native /api/tags ==="
-          curl --silent --show-error --fail http://127.0.0.1:11434/api/tags | python -m json.tool
-          echo
-
-          echo "=== Ollama native /api/show ==="
-          curl --silent --show-error --fail             -H "Content-Type: application/json"             -d '{"name":"qwen3:4b-instruct"}'             http://127.0.0.1:11434/api/show | python -m json.tool
-          echo
-
-          echo "=== Ollama OpenAI-compatible /v1/models ==="
-          curl --silent --show-error --fail http://127.0.0.1:11434/v1/models | python -m json.tool
+          echo "=== Ollama model metadata ==="
+          curl --silent --show-error --fail -H "Content-Type: application/json" -d '{"name":"qwen3:4b-instruct"}' http://127.0.0.1:11434/api/show | python -m json.tool
           echo
 
           echo "=== OpenCode discovered Ollama models ==="
           opencode models
-          echo "OpenCode models exit code: $?"
           echo
 
-          echo "=== OpenCode debug run (read-only agent) ==="
-          opencode run             --print-logs             --log-level debug             --standalone             --agent cloud-readonly             --model ollama/qwen3:4b-instruct             --format json             "$QUESTION"
+          echo "=== OpenCode focused read-only analysis ==="
+          opencode run --print-logs --log-level debug --standalone --agent cloud-readonly --model ollama/qwen3:4b-instruct --format json "$QUESTION"
           echo "OpenCode run exit code: $?"
-
           echo
-          echo "Diagnostics completed; failures above are intentionally captured for inspection."
+
+          echo "=== Ollama allocated model context after analysis ==="
+          docker exec ollama ollama ps
+          echo
+
+          echo "Diagnostics completed; inspect the report content, not only the workflow exit code."
           exit 0
 
       - name: Upload companion diagnostics
